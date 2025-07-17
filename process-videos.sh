@@ -26,18 +26,28 @@ while true; do
     echo "Playing file: ${file}"
 
     # =================================================================================
-    # This plays the video to the framebuffer.   Note we read in the resolution of the framebuffer
-    # using fbset, which is a utility to set the framebuffer device parameters.
+    # This plays the video to the framebuffer using Intel QSV hardware acceleration.
+    # Note we read in the resolution of the framebuffer using fbset.
     #
+    # -hwaccel qsv: Use Intel QuickSync Video for hardware decoding
     # -re: Read input at native frame rate.
     # -i "$file": Specifies the input file.
-    # -vf "scale=<width>:<height>": sets video filter to scale the video.
+    # -vf "scale_qsv=<width>:<height>": Hardware scaling using Intel QSV
     # -pix_fmt bgra: Pixel format for the framebuffer.
     # -f fbdev /dev/fb0: Output to the framebuffer device.
     # =================================================================================
     read fb_width fb_height < <(fbset | awk '/geometry/ {print $2, $3}')
     echo "Detected framebuffer resolution: ${fb_width}x${fb_height}"
-    ffmpeg -loglevel "$FFMPEG_LOGLEVEL" -re -i "$file" -vf "scale=${fb_width}:${fb_height}" -pix_fmt bgra -f fbdev /dev/fb0
+    
+    # Try hardware acceleration first, fallback to software if it fails
+    echo "Attempting hardware-accelerated playback with Intel QSV..."
+    ffmpeg -loglevel "$FFMPEG_LOGLEVEL" -hwaccel qsv -re -i "$file" -vf "scale_qsv=${fb_width}:${fb_height}" -pix_fmt bgra -f fbdev /dev/fb0
+    
+    # Check if hardware acceleration failed
+    if [ $? -ne 0 ]; then
+      echo "Hardware acceleration failed, falling back to software decoding..."
+      ffmpeg -loglevel "$FFMPEG_LOGLEVEL" -re -i "$file" -vf "scale=${fb_width}:${fb_height}" -pix_fmt bgra -f fbdev /dev/fb0
+    fi
 
     if [ $? -eq 0 ]; then
       echo "Finished playing ${filename}"
