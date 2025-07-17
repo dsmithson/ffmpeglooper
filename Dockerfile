@@ -4,18 +4,15 @@ FROM ubuntu:24.04
 # Set frontend to noninteractive to avoid prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install FFmpeg, Intel VA-API drivers, Intel Media SDK, and other utilities
+# Install FFmpeg, Intel VA-API drivers, and other utilities
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     intel-media-va-driver-non-free \
-    intel-media-va-driver \
-    libmfx1 \
-    libmfx-tools \
     vainfo \
     fbset \
     && rm -rf /var/lib/apt/lists/*
 
-# Set environment variables for Intel QSV
+# Set environment variables for Intel VA-API
 ENV LIBVA_DRIVER_NAME=iHD
 ENV LIBVA_DRIVERS_PATH=/usr/lib/x86_64-linux-gnu/dri
 
