@@ -48,20 +48,16 @@ while true; do
     echo "Playing file: ${file}"
 
     # =================================================================================
-    # This plays the video to the framebuffer using Intel QSV hardware acceleration.
-    # Note we read in the resolution of the framebuffer using fbset.
-    #
-    # -hwaccel qsv: Use Intel QuickSync Video for hardware decoding
-    # -re: Read input at native frame rate.
-    # -i "$file": Specifies the input file.
-    # -vf "scale_qsv=<width>:<height>": Hardware scaling using Intel QSV
-    # -pix_fmt bgra: Pixel format for the framebuffer.
-    # -f fbdev /dev/fb0: Output to the framebuffer device.
+    # This plays the video to the framebuffer using Intel hardware acceleration.
+    # We try multiple hardware acceleration methods in order of preference:
+    # 1. Intel QSV (QuickSync Video)
+    # 2. Intel VA-API
+    # 3. Software fallback
     # =================================================================================
     read fb_width fb_height < <(fbset | awk '/geometry/ {print $2, $3}')
     echo "Detected framebuffer resolution: ${fb_width}x${fb_height}"
     
-    # Try hardware acceleration first, fallback to software if it fails
+    # Try Intel QSV first
     echo "Attempting hardware-accelerated playback with Intel QSV..."
     ffmpeg -loglevel "$FFMPEG_LOGLEVEL" -hwaccel qsv -re -i "$file" -vf "scale_qsv=${fb_width}:${fb_height}" -pix_fmt bgra -f fbdev /dev/fb0 &
     FFMPEG_PID=$!
@@ -70,7 +66,16 @@ while true; do
     wait $FFMPEG_PID
     FFMPEG_EXIT_CODE=$?
     
-    # Check if hardware acceleration failed
+    # If QSV failed, try VA-API
+    if [ $FFMPEG_EXIT_CODE -ne 0 ] && [ "$SHOULD_EXIT" = false ]; then
+      echo "Intel QSV failed, trying VA-API hardware acceleration..."
+      ffmpeg -loglevel "$FFMPEG_LOGLEVEL" -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -re -i "$file" -vf "scale_vaapi=${fb_width}:${fb_height}" -pix_fmt bgra -f fbdev /dev/fb0 &
+      FFMPEG_PID=$!
+      wait $FFMPEG_PID
+      FFMPEG_EXIT_CODE=$?
+    fi
+    
+    # If both hardware methods failed, fall back to software
     if [ $FFMPEG_EXIT_CODE -ne 0 ] && [ "$SHOULD_EXIT" = false ]; then
       echo "Hardware acceleration failed, falling back to software decoding..."
       ffmpeg -loglevel "$FFMPEG_LOGLEVEL" -re -i "$file" -vf "scale=${fb_width}:${fb_height}" -pix_fmt bgra -f fbdev /dev/fb0 &
